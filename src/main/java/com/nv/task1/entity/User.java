@@ -25,6 +25,11 @@ public class User {
     @Enumerated(EnumType.STRING)
     private Role role;
 
+    @Lob
+    @Column(columnDefinition = "LONGTEXT")
+    private String photo;
+
+
     @OneToOne
     @JoinColumn(name="employee_id")
     private Employee employee;

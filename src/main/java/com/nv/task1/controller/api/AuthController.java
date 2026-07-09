@@ -44,7 +44,8 @@ public class AuthController {
                     "role", role,
                     "username", username,
                     "employeeId", user.getEmployee() != null ? user.getEmployee().getId() : 0L,
-                    "name", user.getEmployee() != null ? user.getEmployee().getName() : username
+                    "name", user.getEmployee() != null ? user.getEmployee().getName() : username,
+                    "photo", user.getPhoto() != null ? user.getPhoto() : ""
             ));
         } catch (Exception e) {
             e.printStackTrace();
