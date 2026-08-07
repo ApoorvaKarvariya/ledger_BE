@@ -1,4 +1,3 @@
-
 package com.nv.task1.service;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -11,16 +10,25 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 /**
- * Sends transactional emails via the Resend HTTP API (https://resend.com).
+ * Sends transactional emails via the Brevo (formerly Sendinblue) HTTP API
+ * (https://www.brevo.com).
  *
- * We switched away from plain SMTP (JavaMailSender / smtp.gmail.com:587) because
- * Render's free web-service tier blocks all outbound SMTP ports (25, 465, 587)
- * as of Sept 26, 2025. Resend's API works over plain HTTPS (port 443), which is
- * never blocked, so OTP emails work fine on the free tier.
+ * We use Brevo instead of Resend because Brevo only requires verifying a
+ * single sender EMAIL ADDRESS (e.g. your own Gmail), not a whole domain.
+ * That means OTP emails can be sent to ANY recipient, not just your own
+ * inbox - unlike Resend's no-domain "onboarding@resend.dev" test mode,
+ * which only delivers to the account owner's email.
+ *
+ * We also don't use SMTP (JavaMailSender / smtp.gmail.com:587) because
+ * Render's free web-service tier blocks all outbound SMTP ports
+ * (25, 465, 587) as of Sept 26, 2025. Brevo's API works over plain HTTPS
+ * (port 443), which is never blocked, so this works fine on the free tier.
  *
  * Required environment variables:
- *   RESEND_API_KEY   - your Resend API key (starts with "re_")
- *   RESEND_FROM_EMAIL - the verified sender address/domain, e.g. "EMS Ledger <onboarding@resend.dev>"
+ *   BREVO_API_KEY    - your Brevo API key (starts with "xkeysib-")
+ *   BREVO_FROM_EMAIL  - the single email address you verified in Brevo
+ *                        (e.g. "apoorvalku05@gmail.com")
+ *   BREVO_FROM_NAME   - display name for the sender, e.g. "EMS Ledger"
  */
 @Service
 public class EmailService {
@@ -29,11 +37,14 @@ public class EmailService {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    @Value("${resend.api-key}")
-    private String resendApiKey;
+    @Value("${brevo.api-key}")
+    private String brevoApiKey;
 
-    @Value("${resend.from-email}")
+    @Value("${brevo.from-email}")
     private String fromEmail;
+
+    @Value("${brevo.from-name}")
+    private String fromName;
 
     public void sendOtpEmail(String toEmail, String otp) {
         String subject = "EMS Ledger - Password Reset OTP";
@@ -42,12 +53,13 @@ public class EmailService {
 
         String jsonBody = """
                 {
-                  "from": "%s",
-                  "to": ["%s"],
+                  "sender": { "name": "%s", "email": "%s" },
+                  "to": [ { "email": "%s" } ],
                   "subject": "%s",
-                  "text": "%s"
+                  "textContent": "%s"
                 }
                 """.formatted(
+                escapeJson(fromName),
                 escapeJson(fromEmail),
                 escapeJson(toEmail),
                 escapeJson(subject),
@@ -55,9 +67,10 @@ public class EmailService {
         );
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.resend.com/emails"))
-                .header("Authorization", "Bearer " + resendApiKey)
+                .uri(URI.create("https://api.brevo.com/v3/smtp/email"))
+                .header("api-key", brevoApiKey)
                 .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(15))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
@@ -66,7 +79,7 @@ public class EmailService {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 400) {
-                throw new RuntimeException("Failed to send OTP email. Resend API responded with "
+                throw new RuntimeException("Failed to send OTP email. Brevo API responded with "
                         + response.statusCode() + ": " + response.body());
             }
         } catch (java.io.IOException | InterruptedException e) {
